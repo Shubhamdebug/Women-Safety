@@ -16,7 +16,7 @@ class Contact {
 class EmergencyEvent {
   final String id;
   final DateTime time;
-  final String trigger; // tap | shake
+  final String trigger; // button | shake (must match backend)
   String status;
   String syncStatus;
   String contactsStatus;

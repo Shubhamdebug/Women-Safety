@@ -1,6 +1,7 @@
-import 'dart:math';
 import 'package:flutter/foundation.dart';
+import 'package:uuid/uuid.dart';
 import '../models/models.dart';
+import 'api_client.dart';
 
 /// MOCK data layer (in memory, resets when the app restarts).
 /// Later: swap the methods for Flask API calls + local SQLite.
@@ -9,8 +10,7 @@ class AppState extends ChangeNotifier {
   AppState._();
   static final AppState I = AppState._();
 
-  // account
-  final List<Account> _accounts = [];
+  // account (the real accounts live on the backend)
   Account? user;
   bool setupDone = false; // S13 shows on first login only
 
@@ -33,50 +33,48 @@ class AppState extends ChangeNotifier {
   final List<EmergencyEvent> events = [];
   final List<AnonymousReport> reports = [];
 
-  final _rnd = Random();
-  String _id() => '${DateTime.now().microsecondsSinceEpoch}-${_rnd.nextInt(9999)}';
+  static const _uuid = Uuid();
+  /// Real UUID v4. The backend requires this for SOS ids (idempotency key).
+  String _id() => _uuid.v4();
   void _go() => notifyListeners();
   void changed() => _go();
 
   // ---------- S01 / S02 ----------
+  /// Backend wants digits with an optional leading +.
   String _digits(String s) => s.replaceAll(RegExp(r'[^0-9+]'), '');
 
-  /// Returns an error message, or null on success.
-  String? register(String name, String phone, String email, String password) {
-    final dup = _accounts.any((a) =>
-        a.email.toLowerCase() == email.toLowerCase() || _digits(a.phone) == _digits(phone));
-    if (dup) return 'An account with this phone or email already exists.';
-    _accounts.add(Account(name, phone, email, password));
-    return null;
+  /// Calls POST /api/auth/register. Returns an error message, or null on success.
+  /// NOTE: the backend stores name, phone and password only. Email is not sent.
+  Future<String?> register(String name, String phone, String email, String password) async {
+    final r = await ApiClient.I.post('/api/auth/register',
+        {'name': name, 'phone': _digits(phone), 'password': password});
+    return r.ok ? null : r.error;
   }
 
-  /// Returns an error message, or null on success.
-  String? login(String identifier, String password) {
-    if (_accounts.isEmpty) return 'No account found. Tap Register first.';
-    final id = identifier.trim().toLowerCase();
-    for (final a in _accounts) {
-      final match = a.email.toLowerCase() == id || _digits(a.phone) == _digits(identifier);
-      if (match && a.password == password) {
-        user = a;
-        _go();
-        return null;
-      }
-    }
-    return 'Incorrect phone/email or password.';
+  /// Calls POST /api/auth/login (phone + password). Returns an error message, or null on success.
+  Future<String?> login(String phone, String password) async {
+    final r = await ApiClient.I.post('/api/auth/login',
+        {'phone': _digits(phone), 'password': password});
+    if (!r.ok) return r.error;
+    ApiClient.I.token = r.data['token'] as String?;
+    final u = r.data['user'] as Map<String, dynamic>;
+    user = Account(u['name'] as String, u['phone'] as String, '', '');
+    _go();
+    return null;
   }
 
   void logout() {
     user = null;
+    ApiClient.I.token = null;
     liveSharing = false;
     _go();
   }
 
+  /// Local only for now. The backend has no profile-update endpoint yet.
   void updateProfile(String name, String phone) {
     final u = user;
     if (u == null) return;
     user = Account(name, phone, u.email, u.password);
-    final i = _accounts.indexWhere((a) => a.email == u.email);
-    if (i >= 0) _accounts[i] = user!;
     _go();
   }
 

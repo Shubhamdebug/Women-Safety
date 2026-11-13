@@ -77,7 +77,7 @@ class S03Home extends StatelessWidget {
                   label: 'SOS emergency button',
                   child: GestureDetector(
                     onTap: () {
-                      s.createEvent('tap');
+                      s.createEvent('button');
                       Navigator.pushNamed(context, Routes.sosStatus);
                     },
                     child: SizedBox(

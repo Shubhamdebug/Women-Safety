@@ -17,6 +17,7 @@ class _S01State extends State<S01Login> {
   final _key = GlobalKey<FormState>();
   final _id = TextEditingController();
   final _pass = TextEditingController();
+  bool _busy = false;
 
   @override
   void dispose() {
@@ -25,10 +26,13 @@ class _S01State extends State<S01Login> {
     super.dispose();
   }
 
-  void _login() {
-    if (!_key.currentState!.validate()) return;
-    // TODO(Tanisha's API): POST /api/auth/login, keep the token securely.
-    final err = AppState.I.login(_id.text, _pass.text);
+  Future<void> _login() async {
+    if (_busy || !_key.currentState!.validate()) return;
+    setState(() => _busy = true);
+    // TODO: persist the token securely (flutter_secure_storage) so login survives restarts.
+    final err = await AppState.I.login(_id.text, _pass.text);
+    if (!mounted) return;
+    setState(() => _busy = false);
     if (err != null) return snack(context, err);
     final next = AppState.I.setupDone ? Routes.home : Routes.permissions;
     Navigator.pushNamedAndRemoveUntil(context, next, (_) => false);
@@ -57,16 +61,18 @@ class _S01State extends State<S01Login> {
                         style: TextStyle(fontSize: 17, color: AppColors.muted)),
                     const SizedBox(height: 28),
                     AppField(
-                        label: 'Phone or email',
+                        label: 'Phone number',
                         controller: _id,
-                        keyboard: TextInputType.emailAddress,
-                        validator: Validators.phoneOrEmail),
+                        keyboard: TextInputType.phone,
+                        validator: Validators.phone),
                     AppField(
                         label: 'Password',
                         controller: _pass,
                         obscure: true,
                         validator: (v) => Validators.required(v, 'Password')),
-                    FilledButton(onPressed: _login, child: const Text('Log in')),
+                    FilledButton(
+                        onPressed: _busy ? null : _login,
+                        child: Text(_busy ? 'Logging in...' : 'Log in')),
                     const SizedBox(height: 14),
                     Row(mainAxisAlignment: MainAxisAlignment.center, children: [
                       const Text('New here?', style: TextStyle(color: AppColors.muted)),
