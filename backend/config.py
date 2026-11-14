@@ -1,11 +1,13 @@
 import os
+import secrets
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent
 
 
 class Config:
-    SECRET_KEY = os.environ.get("SECRET_KEY", "dev-secret-change-me-use-a-long-random-string-in-production")
+    # Uses SECRET_KEY from environment if set; otherwise generates a fresh secure random key at startup.
+    SECRET_KEY = os.environ.get("SECRET_KEY") or secrets.token_hex(32)
     SQLALCHEMY_DATABASE_URI = os.environ.get(
         "DATABASE_URL", f"sqlite:///{BASE_DIR / 'safeher.db'}"
     )

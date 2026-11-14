@@ -2,7 +2,7 @@ import uuid
 
 from flask import Blueprint, jsonify, request
 
-from extensions import db
+from extensions import db, limiter
 from models import Incident
 from utils import error, parse_ts, utcnow, valid_coords
 
@@ -24,10 +24,11 @@ def categories():
 
 
 @bp.post("")
+@limiter.limit("10 per minute")
 def create_report():
     """
     ANONYMOUS reporting. Deliberately NO @token_required here, and we never read the
-    Authorization header, the IP address or any user info. user_id stays NULL.
+    Authorization header or any user info. user_id stays NULL.
     """
     data = request.get_json(silent=True) or {}
 

@@ -39,6 +39,35 @@ def add_guardian():
     return jsonify({"guardian": guardian.to_dict()}), 201
 
 
+@bp.put("/<int:guardian_id>")
+@token_required()
+def update_guardian(guardian_id):
+    guardian = db.session.get(Guardian, guardian_id)
+    # Only the owner may edit. 404 (not 403) so IDs of other users are not revealed.
+    if guardian is None or guardian.user_id != g.current_user.id:
+        return error("Guardian not found.", 404)
+
+    data = request.get_json(silent=True) or {}
+
+    if "name" in data:
+        name = str(data["name"]).strip()
+        if not name:
+            return error("Guardian name cannot be empty.")
+        guardian.name = name
+
+    if "phone" in data:
+        phone = str(data["phone"]).strip()
+        if not PHONE_RE.match(phone):
+            return error("Guardian phone must be 10-15 digits.")
+        guardian.phone = phone
+
+    if "relation" in data:
+        guardian.relation = str(data["relation"]).strip()[:50]
+
+    db.session.commit()
+    return jsonify({"guardian": guardian.to_dict()})
+
+
 @bp.delete("/<int:guardian_id>")
 @token_required()
 def delete_guardian(guardian_id):

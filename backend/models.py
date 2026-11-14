@@ -14,6 +14,7 @@ class User(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(100), nullable=False)
     phone = db.Column(db.String(20), unique=True, nullable=False)
+    email = db.Column(db.String(120), unique=True, nullable=True)
     password_hash = db.Column(db.String(255), nullable=False)  # never plain text
     role = db.Column(db.String(10), nullable=False, default="user")  # user | admin
     created_at = db.Column(db.DateTime, default=utcnow)
@@ -27,6 +28,7 @@ class User(db.Model):
             "id": self.id,
             "name": self.name,
             "phone": self.phone,
+            "email": self.email,
             "role": self.role,
         }
 

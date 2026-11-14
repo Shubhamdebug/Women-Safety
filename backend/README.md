@@ -53,7 +53,7 @@ Expected: `16 passed`. If something fails, read the message, or send it to me.
 
 ### Step 5: Create the admin account (Charini needs this to log in)
 ```
-python seed_admin.py 9999999999 admin123
+python seed_admin.py <phone> <password>
 ```
 
 ### Step 6: Start the server
@@ -81,7 +81,7 @@ Leave this terminal running while you test.
 
 ### Step 9: Share the API contract
 Send the **API reference below** to Shubham, Vignesh and Charini. They build against it.
-Tell Charini the admin login (phone `9999999999`, password `admin123`).
+Tell Charini the admin login ("Create an admin account using python seed_admin.py <phone> <password>").
 
 ### Step 10: Coordinate with Rishi (Database)
 `models.py` is the database contract. Ask Rishi to review it. If he renames a column, update

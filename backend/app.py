@@ -4,7 +4,7 @@ from flask import Flask, jsonify
 from flask_cors import CORS
 
 from config import Config
-from extensions import db
+from extensions import db, limiter
 
 
 def create_app(config_overrides=None):
@@ -16,6 +16,7 @@ def create_app(config_overrides=None):
 
     CORS(app)  # lets Charini's dashboard (another port) call this API
     db.init_app(app)
+    limiter.init_app(app)
 
     from routes import admin, auth, guardians, reports, sos
 
@@ -46,6 +47,10 @@ def create_app(config_overrides=None):
     def too_big(_):
         return jsonify({"error": "File too large (max 5 MB)."}), 413
 
+    @app.errorhandler(429)
+    def rate_limited(_):
+        return jsonify({"error": "Too many requests. Please try again later."}), 429
+
     @app.errorhandler(500)
     def server_error(_):
         return jsonify({"error": "Something went wrong on the server."}), 500
@@ -54,5 +59,6 @@ def create_app(config_overrides=None):
 
 
 if __name__ == "__main__":
-    # host 0.0.0.0 lets a phone on the SAME Wi-Fi reach this laptop.
-    create_app().run(host="0.0.0.0", port=5000, debug=True)
+    # Debug mode is OFF by default for safety on shared Wi-Fi; set FLASK_DEBUG=true only locally if needed.
+    debug_mode = os.environ.get("FLASK_DEBUG", "false").lower() == "true"
+    create_app().run(host="0.0.0.0", port=5000, debug=debug_mode)
