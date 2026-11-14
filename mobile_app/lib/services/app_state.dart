@@ -1,5 +1,7 @@
+import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:uuid/uuid.dart';
+import '../config/app_config.dart';
 import '../models/models.dart';
 import 'api_client.dart';
 
@@ -27,6 +29,7 @@ class AppState extends ChangeNotifier {
   // live sharing
   bool liveSharing = false;
   DateTime? liveSince;
+  String? lastSendError; // why the last SOS send failed, shown on S05
 
   // data
   final List<Contact> contacts = [];
@@ -60,12 +63,15 @@ class AppState extends ChangeNotifier {
     final u = r.data['user'] as Map<String, dynamic>;
     user = Account(u['name'] as String, u['phone'] as String, '', '');
     _go();
+    await Future.wait([loadContacts(), loadHistory()]);
     return null;
   }
 
   void logout() {
     user = null;
     ApiClient.I.token = null;
+    contacts.clear();
+    events.clear();
     liveSharing = false;
     _go();
   }
@@ -79,22 +85,67 @@ class AppState extends ChangeNotifier {
   }
 
   // ---------- S07 / S08 ----------
-  void addContact(String n, String p, String rel) {
-    contacts.add(Contact(id: _id(), name: n, phone: p, relationship: rel));
+  /// The backend allows at most 5 guardians per user.
+  static const maxContacts = 5;
+
+  Contact _contactFrom(dynamic j) => Contact(
+      id: '${j['id']}',
+      name: j['name'] as String,
+      phone: j['phone'] as String,
+      relationship: (j['relation'] ?? '') as String);
+
+  /// GET /api/guardians
+  Future<void> loadContacts() async {
+    final r = await ApiClient.I.get('/api/guardians');
+    if (!r.ok) return;
+    final list = (r.data['guardians'] as List?) ?? [];
+    contacts
+      ..clear()
+      ..addAll(list.map(_contactFrom));
     _go();
   }
 
-  void updateContact(Contact c, String n, String p, String rel) {
-    c.name = n; c.phone = p; c.relationship = rel;
+  /// POST /api/guardians. Returns an error message, or null on success.
+  Future<String?> addContact(String n, String p, String rel) async {
+    final r = await ApiClient.I
+        .post('/api/guardians', {'name': n, 'phone': p, 'relation': rel});
+    if (!r.ok) return r.error;
+    contacts.add(_contactFrom(r.data['guardian']));
     _go();
+    return null;
   }
 
-  void deleteContact(Contact c) {
+  /// DELETE /api/guardians/<id>. Returns an error message, or null on success.
+  Future<String?> deleteContact(Contact c) async {
+    final r = await ApiClient.I.delete('/api/guardians/${c.id}');
+    if (!r.ok && r.status != 404) return r.error; // 404 = already gone
     contacts.remove(c);
     _go();
+    return null;
   }
 
-  // ---------- S04 / S05 / S06 ----------
+  /// The backend has no edit endpoint yet, so an edit is "add the new one, then
+  /// delete the old one". If the list is full we must delete first, and we put
+  /// the old contact back if adding the new one fails.
+  /// TODO: replace with PUT /api/guardians/<id> once M3 adds it.
+  Future<String?> updateContact(Contact c, String n, String p, String rel) async {
+    if (c.name == n && c.phone == p && c.relationship == rel) return null;
+    if (contacts.length >= maxContacts) {
+      final del = await deleteContact(c);
+      if (del != null) return del;
+      final err = await addContact(n, p, rel);
+      if (err != null) {
+        await addContact(c.name, c.phone, c.relationship);
+        return err;
+      }
+      return null;
+    }
+    final err = await addContact(n, p, rel);
+    if (err != null) return err;
+    return deleteContact(c);
+  }
+
+  // ---------- S04 / S05 / S06 / S10 ----------
   EmergencyEvent? get activeEvent {
     for (final e in events) {
       if (e.status == 'active') return e;
@@ -102,33 +153,116 @@ class AppState extends ChangeNotifier {
     return null;
   }
 
-  /// Reuses the active event if there is one (prevents duplicate SOS records).
+  /// Reuses a RECENT active event (prevents duplicate SOS records). An old
+  /// "active" event left over from an earlier session is not reused, otherwise
+  /// a new SOS would silently be treated as the old one.
   EmergencyEvent createEvent(String trigger) {
     final existing = activeEvent;
-    if (existing != null) return existing;
+    if (existing != null &&
+        DateTime.now().difference(existing.time) < const Duration(minutes: 30)) {
+      return existing;
+    }
     final e = EmergencyEvent(id: _id(), time: DateTime.now(), trigger: trigger);
     events.insert(0, e);
     _go();
     return e;
   }
 
-  /// MOCK send. Real version: POST /api/emergency using e.id as the
-  /// idempotency key, and queue in SQLite when offline.
+  /// POST /api/sos. e.id is a UUID, so retrying after a network drop is safe
+  /// (the backend returns the first record instead of creating a duplicate).
+  /// TODO: replace the fixed location with real GPS (M2's work). Until then
+  /// every SOS is reported from AppConfig.campusCenter.
   Future<bool> sendEvent(EmergencyEvent e) async {
-    await Future.delayed(const Duration(milliseconds: 1500));
+    lastSendError = null;
     if (!online) {
+      lastSendError = 'Offline switch is on (demo)';
       _go();
       return false;
     }
     if (e.status != 'active') return false;
+    final r = await ApiClient.I.post('/api/sos', {
+      'id': e.id,
+      'trigger': e.trigger,
+      'latitude': AppConfig.campusCenter.latitude,
+      'longitude': AppConfig.campusCenter.longitude,
+      'timestamp': e.time.toUtc().toIso8601String(),
+    });
+    if (!r.ok) {
+      lastSendError = r.error;
+      _go();
+      return false;
+    }
     e.syncStatus = 'received';
+    if (r.data['duplicate'] != true) {
+      final alerts = ((r.data['alerts'] as List?) ?? [])
+          .where((a) => a['channel'] == 'sms')
+          .toList();
+      final delivered =
+          alerts.where((a) => a['status'] == 'sent' || a['status'] == 'simulated').length;
+      final simulated = alerts.any((a) => a['status'] == 'simulated');
+      if (delivered > 0) {
+        e.contactsStatus = 'handed_off';
+        e.alertDetail = '$delivered of ${alerts.length} contact(s) alerted'
+            '${simulated ? ' (demo: SMS is simulated)' : ''}';
+      } else {
+        e.contactsStatus = 'not_notified';
+        e.alertDetail = alerts.isEmpty
+            ? 'No emergency contacts saved. Add contacts first.'
+            : 'SMS to contacts failed';
+      }
+    }
+    // The user cancelled while the request was in flight: close it on the server too.
+    if (e.status != 'active') _closeOnServer(e, e.status);
     _go();
     return true;
+  }
+
+  /// Tells the server the SOS is over. Best effort: if it fails, the local
+  /// state is still closed.
+  void _closeOnServer(EmergencyEvent e, String status) {
+    if (e.syncStatus != 'received') return; // the server never heard about it
+    unawaited(ApiClient.I.post('/api/sos/${e.id}/resolve', {'status': status}));
   }
 
   void cancelEvent(EmergencyEvent e) {
     e.status = 'cancelled';
     liveSharing = false;
+    _closeOnServer(e, 'cancelled');
+    _go();
+  }
+
+  /// GET /api/sos/mine. Merges with local events so an SOS that has not
+  /// reached the server yet is not lost.
+  Future<void> loadHistory() async {
+    final r = await ApiClient.I.get('/api/sos/mine');
+    if (!r.ok) return;
+    final local = {for (final e in events) e.id: e};
+    final server = <EmergencyEvent>[];
+    for (final j in (r.data['incidents'] as List?) ?? []) {
+      final id = j['id'] as String;
+      final status = (j['status'] ?? 'active') as String;
+      final known = local[id];
+      if (known != null) {
+        known.status = status;
+        server.add(known);
+      } else {
+        server.add(EmergencyEvent(
+          id: id,
+          time: DateTime.tryParse('${j['created_at']}')?.toLocal() ?? DateTime.now(),
+          trigger: (j['trigger'] ?? 'button') as String,
+          status: status,
+          syncStatus: 'received',
+          contactsStatus: 'unknown',
+        ));
+      }
+    }
+    final serverIds = server.map((e) => e.id).toSet();
+    final pendingLocal =
+        events.where((e) => e.syncStatus != 'received' && !serverIds.contains(e.id));
+    final merged = [...pendingLocal, ...server];
+    events
+      ..clear()
+      ..addAll(merged);
     _go();
   }
 
@@ -142,7 +276,10 @@ class AppState extends ChangeNotifier {
   void stopLive() {
     liveSharing = false;
     final e = activeEvent;
-    if (e != null) e.status = 'resolved';
+    if (e != null) {
+      e.status = 'resolved';
+      _closeOnServer(e, 'resolved');
+    }
     _go();
   }
 

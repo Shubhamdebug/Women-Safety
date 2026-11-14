@@ -20,7 +20,10 @@ class S07Contacts extends StatelessWidget {
         ],
       ),
     );
-    if (ok == true) AppState.I.deleteContact(c);
+    if (ok == true) {
+      final err = await AppState.I.deleteContact(c);
+      if (err != null && context.mounted) snack(context, err);
+    }
   }
 
   @override

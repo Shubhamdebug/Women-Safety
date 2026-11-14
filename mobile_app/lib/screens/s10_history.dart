@@ -6,8 +6,18 @@ import '../widgets/common.dart';
 /// S10 Incident History: your own SOS events only.
 /// Anonymous reports are NOT listed here on purpose, because they are not
 /// linked to any account.
-class S10History extends StatelessWidget {
+class S10History extends StatefulWidget {
   const S10History({super.key});
+  @override
+  State<S10History> createState() => _S10State();
+}
+
+class _S10State extends State<S10History> {
+  @override
+  void initState() {
+    super.initState();
+    AppState.I.loadHistory(); // GET /api/sos/mine
+  }
 
   Color _color(String s) => s == 'active'
       ? AppColors.red

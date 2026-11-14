@@ -20,6 +20,7 @@ class EmergencyEvent {
   String status;
   String syncStatus;
   String contactsStatus;
+  String alertDetail; // e.g. "2 of 2 contacts alerted"
   EmergencyEvent({
     required this.id,
     required this.time,
@@ -27,6 +28,7 @@ class EmergencyEvent {
     this.status = 'active',
     this.syncStatus = 'pending',
     this.contactsStatus = 'not_notified',
+    this.alertDetail = '',
   });
 }
 

@@ -86,18 +86,20 @@ class _S05State extends State<S05SosStatus> {
                   StepRow(
                     label: 'Sent to server',
                     detail: synced
-                        ? 'Received (demo server)'
+                        ? 'Received by server'
                         : _sending
                             ? 'Sending...'
-                            : 'Offline - will sync when connected',
+                            : AppState.I.lastSendError ?? 'Not sent yet',
                     state: synced
                         ? StepStatus.done
                         : _sending ? StepStatus.pending : StepStatus.warn,
                   ),
-                  const StepRow(
+                  StepRow(
                       label: 'Contacts alerted',
-                      detail: 'Not sent yet - SMS / push is not connected',
-                      state: StepStatus.warn),
+                      detail: e.alertDetail.isNotEmpty ? e.alertDetail : 'Not sent yet',
+                      state: e.contactsStatus == 'handed_off'
+                          ? StepStatus.done
+                          : StepStatus.warn),
                 ]),
               ),
               if (!synced && !_sending) ...[
