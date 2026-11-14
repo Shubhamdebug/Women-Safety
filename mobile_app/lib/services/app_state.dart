@@ -4,6 +4,7 @@ import 'package:uuid/uuid.dart';
 import '../config/app_config.dart';
 import '../models/models.dart';
 import 'api_client.dart';
+import 'session_store.dart';
 
 /// MOCK data layer (in memory, resets when the app restarts).
 /// Later: swap the methods for Flask API calls + local SQLite.
@@ -14,7 +15,12 @@ class AppState extends ChangeNotifier {
 
   // account (the real accounts live on the backend)
   Account? user;
-  bool setupDone = false; // S13 shows on first login only
+  bool _setupDone = false; // S13 (permissions) shows on first login only
+  bool get setupDone => _setupDone;
+  set setupDone(bool v) {
+    _setupDone = v;
+    unawaited(SessionStore.saveSetupDone(v)); // remembered across restarts
+  }
 
   // device / settings (placeholders until sensors and GPS are connected)
   bool shakeProtection = true;
@@ -62,14 +68,40 @@ class AppState extends ChangeNotifier {
     ApiClient.I.token = r.data['token'] as String?;
     final u = r.data['user'] as Map<String, dynamic>;
     user = Account(u['name'] as String, u['phone'] as String, '', '');
+    await SessionStore.save(ApiClient.I.token!, user!.name, user!.phone);
     _go();
     await Future.wait([loadContacts(), loadHistory()]);
     return null;
   }
 
+  /// Called once when the app starts. Returns true if the user is still logged in.
+  /// - saved login rejected by the server (expired / user gone): forget it, show Login.
+  /// - server unreachable: keep the saved login so the SOS screen still opens
+  ///   (an offline safety app must not lock you out).
+  Future<bool> restoreSession() async {
+    _setupDone = await SessionStore.loadSetupDone();
+    final saved = await SessionStore.load();
+    if (saved == null) return false;
+    ApiClient.I.token = saved.token;
+    final r = await ApiClient.I.get('/api/auth/me').timeout(
+          const Duration(seconds: 3),
+          onTimeout: () => const ApiResult(false, 0, {}, 'timeout'),
+        );
+    if (r.status == 401) {
+      ApiClient.I.token = null;
+      await SessionStore.clear();
+      return false;
+    }
+    user = Account(saved.name, saved.phone, '', '');
+    unawaited(loadContacts());
+    unawaited(loadHistory());
+    return true;
+  }
+
   void logout() {
     user = null;
     ApiClient.I.token = null;
+    unawaited(SessionStore.clear());
     contacts.clear();
     events.clear();
     liveSharing = false;
