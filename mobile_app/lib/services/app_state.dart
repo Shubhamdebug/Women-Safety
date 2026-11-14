@@ -284,10 +284,42 @@ class AppState extends ChangeNotifier {
   }
 
   // ---------- S12 ----------
-  void submitReport(String cat, String loc, String desc, DateTime when, double? lat, double? lng) {
+  /// App label -> code the backend accepts (GET /api/reports/categories).
+  /// The report screen builds its dropdown from these keys, so they cannot drift apart.
+  static const reportCategories = {
+    'Harassment': 'harassment',
+    'Stalking': 'stalking',
+    'Unsafe location': 'unsafe_area',
+    'Suspicious activity': 'suspicious_activity',
+    'Poor lighting': 'poor_lighting',
+    'Other safety concern': 'other',
+  };
+
+  /// POST /api/reports. ANONYMOUS: the login token is deliberately NOT sent.
+  /// The backend has no "place name" field, so the typed location goes at the
+  /// start of the description (the backend keeps only the first 500 characters).
+  /// Returns an error message, or null on success.
+  Future<String?> submitReport(String cat, String loc, String desc, DateTime when,
+      double lat, double lng) async {
+    var text = 'Location: $loc${desc.isEmpty ? '' : '\n$desc'}';
+    if (text.length > 500) text = text.substring(0, 500);
+    final now = DateTime.now();
+    final r = await ApiClient.I.post(
+      '/api/reports',
+      {
+        'category': reportCategories[cat] ?? 'other',
+        'latitude': lat,
+        'longitude': lng,
+        'description': text,
+        'timestamp': (when.isAfter(now) ? now : when).toUtc().toIso8601String(),
+      },
+      auth: false,
+    );
+    if (!r.ok) return r.error;
     reports.add(AnonymousReport(
-      category: cat, locationText: loc, description: desc,
-      incidentTime: when, createdAt: DateTime.now(), lat: lat, lng: lng));
+        category: cat, locationText: loc, description: desc,
+        incidentTime: when, createdAt: now, lat: lat, lng: lng));
     _go();
+    return null;
   }
 }

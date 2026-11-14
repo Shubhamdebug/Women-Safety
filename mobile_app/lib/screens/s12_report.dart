@@ -14,10 +14,7 @@ class S12Report extends StatefulWidget {
 }
 
 class _S12State extends State<S12Report> {
-  static const categories = [
-    'Harassment', 'Stalking', 'Unsafe location',
-    'Suspicious activity', 'Poor lighting', 'Other safety concern',
-  ];
+  static final categories = AppState.reportCategories.keys.toList();
   final _key = GlobalKey<FormState>();
   final _location = TextEditingController();
   final _desc = TextEditingController();
@@ -25,6 +22,7 @@ class _S12State extends State<S12Report> {
   DateTime _date = DateTime.now();
   TimeOfDay _time = TimeOfDay.now();
   LatLng? _point;
+  bool _busy = false;
 
   @override
   void dispose() {
@@ -49,17 +47,23 @@ class _S12State extends State<S12Report> {
   }
 
   Future<void> _submit() async {
-    if (!_key.currentState!.validate()) return;
+    if (_busy || !_key.currentState!.validate()) return;
+    // The backend needs coordinates, so the map point is required.
+    final point = _point;
+    if (point == null) return snack(context, 'Tap the map to mark the spot.');
+    setState(() => _busy = true);
     final when = DateTime(_date.year, _date.month, _date.day, _time.hour, _time.minute);
-    // TODO(Tanisha's API): POST /api/reports with NO user identity attached.
-    AppState.I.submitReport(_cat!, _location.text.trim(), _desc.text.trim(), when,
-        _point?.latitude, _point?.longitude);
+    final err = await AppState.I.submitReport(
+        _cat!, _location.text.trim(), _desc.text.trim(), when, point.latitude, point.longitude);
+    if (!mounted) return;
+    setState(() => _busy = false);
+    if (err != null) return snack(context, err); // stay on the form so nothing typed is lost
     await showDialog<void>(
       context: context,
       builder: (_) => AlertDialog(
-        title: const Text('Report saved'),
+        title: const Text('Report sent'),
         content: const Text(
-            'Nothing identifying you was attached. Demo mode: it is saved in the app and will reach campus analytics once the backend is connected.'),
+            'Thank you. Nothing identifying you was attached: no name, phone number or login.'),
         actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('OK'))],
       ),
     );
@@ -93,7 +97,7 @@ class _S12State extends State<S12Report> {
                   label: 'Location (e.g. Library back gate)',
                   controller: _location,
                   validator: (v) => Validators.required(v, 'Location')),
-              const FieldLabel('Tap the map to mark the spot (optional)'),
+              const FieldLabel('Tap the map to mark the spot'),
               ClipRRect(
                 borderRadius: BorderRadius.circular(16),
                 child: SizedBox(
@@ -119,7 +123,9 @@ class _S12State extends State<S12Report> {
               ]),
               const SizedBox(height: 18),
               AppField(label: 'Description (optional)', controller: _desc, maxLines: 4),
-              FilledButton(onPressed: _submit, child: const Text('Submit report')),
+              FilledButton(
+                  onPressed: _busy ? null : _submit,
+                  child: Text(_busy ? 'Sending...' : 'Submit report')),
             ]),
           ),
         ),

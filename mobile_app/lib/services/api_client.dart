@@ -23,18 +23,19 @@ class ApiClient {
 
   Uri _uri(String path) => Uri.parse('${AppConfig.apiBaseUrl}$path');
 
-  Map<String, String> get _headers => {
+  /// [auth] false = do not attach the login token (used for anonymous reports).
+  Map<String, String> _headers({bool auth = true}) => {
         'Content-Type': 'application/json',
-        if (token != null) 'Authorization': 'Bearer $token',
+        if (auth && token != null) 'Authorization': 'Bearer $token',
       };
 
-  Future<ApiResult> post(String path, Map<String, dynamic> body) =>
-      _send(() => http.post(_uri(path), headers: _headers, body: jsonEncode(body)));
+  Future<ApiResult> post(String path, Map<String, dynamic> body, {bool auth = true}) =>
+      _send(() => http.post(_uri(path), headers: _headers(auth: auth), body: jsonEncode(body)));
 
-  Future<ApiResult> get(String path) => _send(() => http.get(_uri(path), headers: _headers));
+  Future<ApiResult> get(String path) => _send(() => http.get(_uri(path), headers: _headers()));
 
   Future<ApiResult> delete(String path) =>
-      _send(() => http.delete(_uri(path), headers: _headers));
+      _send(() => http.delete(_uri(path), headers: _headers()));
 
   Future<ApiResult> _send(Future<http.Response> Function() call) async {
     try {
