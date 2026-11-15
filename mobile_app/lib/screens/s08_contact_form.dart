@@ -18,6 +18,7 @@ class _S08State extends State<S08ContactForm> {
   String _rel = 'Friend';
   Contact? _editing;
   bool _init = false;
+  bool _busy = false;
 
   @override
   void didChangeDependencies() {
@@ -40,15 +41,17 @@ class _S08State extends State<S08ContactForm> {
     super.dispose();
   }
 
-  void _save() {
-    if (!_key.currentState!.validate()) return;
+  Future<void> _save() async {
+    if (_busy || !_key.currentState!.validate()) return;
+    setState(() => _busy = true);
     final n = _name.text.trim();
     final p = _phone.text.replaceAll(RegExp(r'[\s-]'), '');
-    if (_editing == null) {
-      AppState.I.addContact(n, p, _rel);
-    } else {
-      AppState.I.updateContact(_editing!, n, p, _rel);
-    }
+    final err = _editing == null
+        ? await AppState.I.addContact(n, p, _rel)
+        : await AppState.I.updateContact(_editing!, n, p, _rel);
+    if (!mounted) return;
+    setState(() => _busy = false);
+    if (err != null) return snack(context, err);
     Navigator.pop(context);
   }
 
@@ -70,7 +73,9 @@ class _S08State extends State<S08ContactForm> {
                 onChanged: (v) => setState(() => _rel = v ?? _rel),
               ),
               const SizedBox(height: 24),
-              FilledButton(onPressed: _save, child: const Text('Save')),
+              FilledButton(
+                  onPressed: _busy ? null : _save,
+                  child: Text(_busy ? 'Saving...' : 'Save')),
             ]),
           ),
         ),

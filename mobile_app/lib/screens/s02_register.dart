@@ -16,6 +16,7 @@ class _S02State extends State<S02Register> {
   final _email = TextEditingController();
   final _pass = TextEditingController();
   final _confirm = TextEditingController();
+  bool _busy = false;
 
   @override
   void dispose() {
@@ -25,11 +26,13 @@ class _S02State extends State<S02Register> {
     super.dispose();
   }
 
-  void _submit() {
-    if (!_key.currentState!.validate()) return;
-    // TODO(Tanisha's API): POST /api/auth/register (backend hashes the password)
-    final err = AppState.I.register(
+  Future<void> _submit() async {
+    if (_busy || !_key.currentState!.validate()) return;
+    setState(() => _busy = true);
+    final err = await AppState.I.register(
         _name.text.trim(), _phone.text.trim(), _email.text.trim(), _pass.text);
+    if (!mounted) return;
+    setState(() => _busy = false);
     if (err != null) return snack(context, err);
     Navigator.pop(context);
     snack(context, 'Account created. Please log in.');
@@ -52,7 +55,9 @@ class _S02State extends State<S02Register> {
                   validator: Validators.password),
               AppField(label: 'Confirm password', controller: _confirm, obscure: true,
                   validator: (v) => v != _pass.text ? 'Passwords do not match' : null),
-              FilledButton(onPressed: _submit, child: const Text('Create account')),
+              FilledButton(
+                  onPressed: _busy ? null : _submit,
+                  child: Text(_busy ? 'Creating...' : 'Create account')),
             ]),
           ),
         ),
