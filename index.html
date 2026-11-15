@@ -1,0 +1,303 @@
+
+<!DOCTYPE html>
+<html lang = "en">
+<head>
+    <meta charset = "UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <title>SafeHer | WOMEN SAFETY ANALYTICS</title>
+
+    <link relc = "stylesheet" href="style.css">
+
+    <!-- Chart.js -->
+    <script src = "https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+    <!-- Leaflet Map -->
+    <link rel ="stylesheet"
+    href ="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+</head>
+
+<body>
+
+<div class="dashboard">
+
+    <!-- SIDEBAR -->
+    <aside class="sidebar">
+
+        <div class="brand">
+            <div class="brand-icon">🛡️</div>
+            <div>
+                <h2>SafeHer</h2>
+                <small>Women Safety Analytics</small>
+            </div>
+        </div>
+
+        <div class="admin">
+            <div class="avatar">A</div>
+            <div>
+                <h3>Administrator</h3>
+                <small>System Admin</small>
+            </div>
+        </div>
+
+        <p class="menu-title">MAIN MENU</p>
+
+        <nav>
+            <a href="#overview" class="nav-link active">▦ Dashboard</a>
+            <a href="#analytics" class="nav-link">▥ Analytics</a>
+            <a href="#reports" class="nav-link">▤ Incident Reports</a>
+            <a href="#map-section" class="nav-link">⌖ Safety Map</a>
+            <a href="#alerts" class="nav-link">♢ Emergency Alerts</a>
+        </nav>
+
+        <p class="menu-title">MANAGEMENT</p>
+
+        <nav>
+            <a href="#settings" class="nav-link">⚙ Settings</a>
+        </nav>
+
+        <div class="sidebar-bottom">
+            <div class="shield">🛡️</div>
+            <p>Building a safer tomorrow.</p>
+            <small>SafeHer Admin v1.0</small>
+        </div>
+
+    </aside>
+
+
+    <!-- MAIN AREA -->
+    <main class="main">
+
+        <!-- HEADER -->
+        <header class="topbar">
+
+            <div>
+                <h1>Dashboard Overview</h1>
+                <p>Welcome back, Administrator!</p>
+            </div>
+
+            <div class="header-right">
+                <span id="currentDate"></span>
+                <button class="notification" id="notificationBtn"
+                aria-label="Show notifications">🔔</button>
+                <div class="avatar">A</div>
+            </div>
+
+        </header>
+
+
+        <!-- OVERVIEW -->
+        <section id="overview">
+
+            <div class="section-title">
+                <div>
+                    <h2>Safety Overview</h2>
+                    <p>Monitor women's safety incidents and reports.</p>
+                </div>
+
+                <span class="demo-label">● DEMO DATA</span>
+            </div>
+
+
+            <!-- STAT CARDS -->
+            <div class="stats">
+
+                <div class="stat-card">
+                    <div class="stat-top">
+                        <span>Total Incidents</span>
+                        <span class="stat-icon purple">▤</span>
+                    </div>
+                    <h2 id="totalIncidents">0</h2>
+                    <p>All reported incidents</p>
+                </div>
+
+                <div class="stat-card">
+                    <div class="stat-top">
+                        <span>Resolved Cases</span>
+                        <span class="stat-icon green">✓</span>
+                    </div>
+                    <h2 id="resolvedCases">0</h2>
+                    <p>Successfully resolved</p>
+                </div>
+
+                <div class="stat-card">
+                    <div class="stat-top">
+                        <span>Pending Reports</span>
+                        <span class="stat-icon orange">◷</span>
+                    </div>
+                    <h2 id="pendingReports">0</h2>
+                    <p>Awaiting action</p>
+                </div>
+
+                <div class="stat-card">
+                    <div class="stat-top">
+                        <span>Emergency Alerts</span>
+                        <span class="stat-icon red">⚠</span>
+                    </div>
+                    <h2 id="emergencyAlerts">0</h2>
+                    <p>Emergency notifications</p>
+                </div>
+
+            </div>
+        </section>
+
+
+        <!-- ANALYTICS -->
+        <section id="analytics" class="section">
+
+            <div class="section-title">
+                <div>
+                    <h2>Incident Analytics</h2>
+                    <p>Understand incident patterns and trends.</p>
+                </div>
+            </div>
+
+            <div class="charts">
+
+                <div class="card">
+                    <div class="card-heading">
+                        <h3>Monthly Incident Trends</h3>
+                        <span>2026</span>
+                    </div>
+                    <div class="chart-container">
+                        <canvas id="trendChart"></canvas>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <div class="card-heading">
+                        <h3>Incident Categories</h3>
+                        <span>Distribution</span>
+                    </div>
+                    <div class="chart-container">
+                        <canvas id="categoryChart"></canvas>
+                    </div>
+                </div>
+
+            </div>
+        </section>
+
+
+        <!-- REPORTS -->
+        <section id="reports" class="section">
+
+            <div class="section-title">
+                <div>
+                    <h2>Incident Reports</h2>
+                    <p>Review and manage reported incidents.</p>
+                </div>
+                <button class="primary-btn" id="exportBtn">
+                    ↓ Export CSV
+                </button>
+            </div>
+
+            <div class="card">
+
+                <div class="table-tools">
+
+                    <input
+                        type="search"
+                        id="searchInput"
+                        placeholder="Search ID, type or location..."
+                    >
+
+                    <select id="statusFilter">
+                        <option value="All">All Status</option>
+                        <option value="Pending">Pending</option>
+                        <option value="Resolved">Resolved</option>
+                        <option value="Under Review">Under Review</option>
+                    </select>
+
+                </div>
+
+                <div class="table-wrapper">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>REPORT ID</th>
+                                <th>INCIDENT TYPE</th>
+                                <th>LOCATION</th>
+                                <th>DATE</th>
+                                <th>PRIORITY</th>
+                                <th>STATUS</th>
+                            </tr>
+                        </thead>
+
+                        <tbody id="reportTable">
+                        </tbody>
+                    </table>
+                </div>
+
+                <p id="reportCount" class="report-count"></p>
+
+            </div>
+        </section>
+
+
+        <!-- MAP -->
+        <section id="map-section" class="section">
+
+            <div class="section-title">
+                <div>
+                    <h2>Safety Map</h2>
+                    <p>Geographical view of sample incident reports.</p>
+                </div>
+            </div>
+
+            <div class="card map-card">
+                <div id="safetyMap"></div>
+            </div>
+
+        </section>
+
+
+        <!-- ALERTS -->
+        <section id="alerts" class="section">
+
+            <div class="section-title">
+                <div>
+                    <h2>Emergency Alerts</h2>
+                    <p>Important notifications requiring attention.</p>
+                </div>
+            </div>
+
+            <div class="alerts-list" id="alertsList"></div>
+
+        </section>
+
+
+        <!-- SETTINGS -->
+        <section id="settings" class="section">
+
+            <div class="section-title">
+                <div>
+                    <h2>Admin Settings</h2>
+                    <p>Dashboard configuration and account details.</p>
+                </div>
+            </div>
+
+            <div class="card settings-card">
+                <h3>Administrator Profile</h3>
+                <p>Role: System Administrator</p>
+                <p>Application: Women Safety Analytics Tool</p>
+                <p>Version: 1.0</p>
+                <small>Authentication will be integrated with the backend.</small>
+            </div>
+
+        </section>
+
+
+        <footer>
+            © 2026 SafeHer Women Safety Analytics | All Rights Reserved
+        </footer>
+
+    </main>
+
+</div>
+
+<script src="script.js"></script>
+
+</body>
+</html>
