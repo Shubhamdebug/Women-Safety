@@ -20,6 +20,7 @@ class _S09State extends State<S09Profile> {
       TextEditingController(text: AppState.I.user?.phone ?? '');
   late final TextEditingController _email =
       TextEditingController(text: AppState.I.user?.email ?? '');
+  bool _busy = false;
 
   @override
   void dispose() {
@@ -29,10 +30,14 @@ class _S09State extends State<S09Profile> {
     super.dispose();
   }
 
-  void _save() {
-    if (!_key.currentState!.validate()) return;
-    AppState.I.updateProfile(_name.text.trim(), _phone.text.trim());
-    snack(context, 'Profile saved on this device');
+  Future<void> _save() async {
+    if (_busy || !_key.currentState!.validate()) return;
+    setState(() => _busy = true);
+    final err = await AppState.I
+        .updateProfile(_name.text.trim(), _phone.text.trim(), _email.text.trim());
+    if (!mounted) return;
+    setState(() => _busy = false);
+    snack(context, err ?? 'Profile saved');
   }
 
   void _logout() {
@@ -51,8 +56,13 @@ class _S09State extends State<S09Profile> {
                   validator: (v) => Validators.required(v, 'Name')),
               AppField(label: 'Phone number', controller: _phone,
                   keyboard: TextInputType.phone, validator: Validators.phone),
-              AppField(label: 'Email', controller: _email, enabled: false),
-              FilledButton(onPressed: _save, child: const Text('Save changes')),
+              AppField(label: 'Email (optional)', controller: _email,
+                  keyboard: TextInputType.emailAddress,
+                  validator: (v) =>
+                      (v == null || v.trim().isEmpty) ? null : Validators.email(v)),
+              FilledButton(
+                  onPressed: _busy ? null : _save,
+                  child: Text(_busy ? 'Saving...' : 'Save changes')),
               const SizedBox(height: 12),
               ListTile(
                 contentPadding: EdgeInsets.zero,

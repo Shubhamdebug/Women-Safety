@@ -53,10 +53,13 @@ class AppState extends ChangeNotifier {
   String _digits(String s) => s.replaceAll(RegExp(r'[^0-9+]'), '');
 
   /// Calls POST /api/auth/register. Returns an error message, or null on success.
-  /// NOTE: the backend stores name, phone and password only. Email is not sent.
   Future<String?> register(String name, String phone, String email, String password) async {
-    final r = await ApiClient.I.post('/api/auth/register',
-        {'name': name, 'phone': _digits(phone), 'password': password});
+    final r = await ApiClient.I.post('/api/auth/register', {
+      'name': name,
+      'phone': _digits(phone),
+      'password': password,
+      if (email.isNotEmpty) 'email': email, // optional on the backend
+    });
     return r.ok ? null : r.error;
   }
 
@@ -67,7 +70,7 @@ class AppState extends ChangeNotifier {
     if (!r.ok) return r.error;
     ApiClient.I.token = r.data['token'] as String?;
     final u = r.data['user'] as Map<String, dynamic>;
-    user = Account(u['name'] as String, u['phone'] as String, '', '');
+    user = Account(u['name'] as String, u['phone'] as String, (u['email'] ?? '') as String, '');
     await SessionStore.save(ApiClient.I.token!, user!.name, user!.phone);
     _go();
     await Future.wait([loadContacts(), loadHistory()]);
@@ -93,6 +96,12 @@ class AppState extends ChangeNotifier {
       return false;
     }
     user = Account(saved.name, saved.phone, '', '');
+    final fresh = r.data['user'];
+    if (r.ok && fresh is Map<String, dynamic>) {
+      user = Account(fresh['name'] as String, fresh['phone'] as String,
+          (fresh['email'] ?? '') as String, '');
+      await SessionStore.save(saved.token, user!.name, user!.phone);
+    }
     unawaited(loadContacts());
     unawaited(loadHistory());
     return true;
@@ -108,12 +117,17 @@ class AppState extends ChangeNotifier {
     _go();
   }
 
-  /// Local only for now. The backend has no profile-update endpoint yet.
-  void updateProfile(String name, String phone) {
-    final u = user;
-    if (u == null) return;
-    user = Account(name, phone, u.email, u.password);
+  /// PUT /api/auth/me. Returns an error message, or null on success.
+  /// An empty email clears it (the email is optional on the backend).
+  Future<String?> updateProfile(String name, String phone, String email) async {
+    final r = await ApiClient.I.put('/api/auth/me',
+        {'name': name, 'phone': _digits(phone), 'email': email});
+    if (!r.ok) return r.error;
+    final u = r.data['user'] as Map<String, dynamic>;
+    user = Account(u['name'] as String, u['phone'] as String, (u['email'] ?? '') as String, '');
+    await SessionStore.save(ApiClient.I.token!, user!.name, user!.phone);
     _go();
+    return null;
   }
 
   // ---------- S07 / S08 ----------
@@ -156,25 +170,18 @@ class AppState extends ChangeNotifier {
     return null;
   }
 
-  /// The backend has no edit endpoint yet, so an edit is "add the new one, then
-  /// delete the old one". If the list is full we must delete first, and we put
-  /// the old contact back if adding the new one fails.
-  /// TODO: replace with PUT /api/guardians/<id> once M3 adds it.
+  /// PUT /api/guardians/<id>. Returns an error message, or null on success.
   Future<String?> updateContact(Contact c, String n, String p, String rel) async {
     if (c.name == n && c.phone == p && c.relationship == rel) return null;
-    if (contacts.length >= maxContacts) {
-      final del = await deleteContact(c);
-      if (del != null) return del;
-      final err = await addContact(n, p, rel);
-      if (err != null) {
-        await addContact(c.name, c.phone, c.relationship);
-        return err;
-      }
-      return null;
-    }
-    final err = await addContact(n, p, rel);
-    if (err != null) return err;
-    return deleteContact(c);
+    final r = await ApiClient.I
+        .put('/api/guardians/${c.id}', {'name': n, 'phone': p, 'relation': rel});
+    if (!r.ok) return r.error;
+    final g = r.data['guardian'];
+    c.name = g['name'] as String;
+    c.phone = g['phone'] as String;
+    c.relationship = (g['relation'] ?? '') as String;
+    _go();
+    return null;
   }
 
   // ---------- S04 / S05 / S06 / S10 ----------

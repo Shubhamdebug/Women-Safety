@@ -32,6 +32,9 @@ class ApiClient {
   Future<ApiResult> post(String path, Map<String, dynamic> body, {bool auth = true}) =>
       _send(() => http.post(_uri(path), headers: _headers(auth: auth), body: jsonEncode(body)));
 
+  Future<ApiResult> put(String path, Map<String, dynamic> body) =>
+      _send(() => http.put(_uri(path), headers: _headers(), body: jsonEncode(body)));
+
   Future<ApiResult> get(String path) => _send(() => http.get(_uri(path), headers: _headers()));
 
   Future<ApiResult> delete(String path) =>
