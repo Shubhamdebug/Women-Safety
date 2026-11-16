@@ -5,9 +5,8 @@ class AppConfig {
   /// Design shows "[APP NAME]". Replace once the team picks a name.
   static const appName = 'KAVACH';
 
-  /// Figma shows a 5 second countdown after a shake.
-  /// DECISION NEEDED: the original requirement text mentions 1-2 minutes.
-  static const sosCountdownSeconds = 5;
+  /// Team decision: the countdown before an SOS is sent is 1 minute.
+  static const sosCountdownSeconds = 60;
 
   /// TODO: put your campus coordinates here (do not guess them).
   /// This placeholder only shows an overview of India.
