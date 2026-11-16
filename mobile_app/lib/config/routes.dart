@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../services/app_state.dart';
 import '../screens/s01_login.dart';
 import '../screens/s02_register.dart';
 import '../screens/s03_home.dart';
@@ -28,6 +29,18 @@ class Routes {
   static const map = '/map'; // S11
   static const report = '/report'; // S12
   static const permissions = '/permissions'; // S13
+}
+
+/// Lets code outside a screen (the shake sensor) open screens.
+final navigatorKey = GlobalKey<NavigatorState>();
+
+/// Opens the SOS countdown (S04) after a shake, if a shake is allowed right now
+/// (logged in, shake protection ON, no SOS running, countdown not already open).
+void openShakeCountdown() {
+  final nav = navigatorKey.currentState;
+  if (nav == null || !AppState.I.shakeArmed) return;
+  AppState.I.countdownOpen = true; // set now so a second shake cannot open another one
+  nav.pushNamed(Routes.sosCountdown);
 }
 
 final Map<String, WidgetBuilder> appRoutes = {

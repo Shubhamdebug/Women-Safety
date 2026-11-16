@@ -1,13 +1,15 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import '../config/app_config.dart';
 import '../config/routes.dart';
 import '../config/theme.dart';
 import '../services/app_state.dart';
 
 /// S04 SOS Countdown. Arrows: Cancel -> S03, Send now / countdown ends -> S05.
-/// NOTE: this timer only runs while the screen is open. The real shake
-/// trigger and a screen-off-safe timer need Vignesh's foreground service.
+/// Opened by a shake (see ShakeService and openShakeCountdown).
+/// NOTE: this timer only runs while the screen is open. A screen-off-safe
+/// timer needs Vignesh's foreground service.
 class S04SosCountdown extends StatefulWidget {
   const S04SosCountdown({super.key});
   @override
@@ -21,6 +23,8 @@ class _S04State extends State<S04SosCountdown> {
   @override
   void initState() {
     super.initState();
+    AppState.I.countdownOpen = true;
+    HapticFeedback.heavyImpact(); // so the user feels the shake was detected
     _timer = Timer.periodic(const Duration(seconds: 1), (t) {
       if (!mounted) return;
       setState(() => _left--);
@@ -46,6 +50,7 @@ class _S04State extends State<S04SosCountdown> {
   @override
   void dispose() {
     _timer?.cancel();
+    AppState.I.countdownOpen = false;
     super.dispose();
   }
 

@@ -41,6 +41,22 @@ class AppState extends ChangeNotifier {
   /// to contacts about a long-finished situation would only cause panic).
   static const pendingSosMaxAge = Duration(hours: 1);
 
+  // shake trigger
+  bool countdownOpen = false; // S04 is on screen (or about to be)
+  bool sensorAvailable = true; // false when this device has no usable accelerometer
+
+  /// An SOS started in the last 30 minutes. The same window createEvent() uses
+  /// to reuse an event, so an old forgotten "active" event cannot block shaking.
+  static const recentEventWindow = Duration(minutes: 30);
+  bool get sosInProgress {
+    final e = activeEvent;
+    return e != null && DateTime.now().difference(e.time) < recentEventWindow;
+  }
+
+  /// True when a shake is allowed to open the countdown right now.
+  bool get shakeArmed =>
+      user != null && setupDone && shakeProtection && !countdownOpen && !sosInProgress;
+
   /// True when the app restarted with an unsent SOS and resumed it.
   /// main.dart then opens the SOS status screen, which retries sending.
   bool resumedPendingSos = false;
@@ -226,7 +242,7 @@ class AppState extends ChangeNotifier {
   EmergencyEvent createEvent(String trigger) {
     final existing = activeEvent;
     if (existing != null &&
-        DateTime.now().difference(existing.time) < const Duration(minutes: 30)) {
+        DateTime.now().difference(existing.time) < recentEventWindow) {
       return existing;
     }
     final e = EmergencyEvent(id: _id(), time: DateTime.now(), trigger: trigger);

@@ -70,6 +70,19 @@ class S03Home extends StatelessWidget {
                   ),
                 ]),
               ),
+              if (!s.sensorAvailable)
+                const Padding(
+                  padding: EdgeInsets.only(top: 8),
+                  child: Text('Shake detection is not available on this device. Use the SOS button.',
+                      style: TextStyle(color: AppColors.muted)),
+                ),
+              if (kDebugMode)
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: TextButton(
+                      onPressed: openShakeCountdown,
+                      child: const Text('Test shake (debug builds only)')),
+                ),
               const SizedBox(height: 16),
               Center(
                 child: Semantics(

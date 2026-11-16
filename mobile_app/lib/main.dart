@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'config/routes.dart';
 import 'config/theme.dart';
 import 'services/app_state.dart';
+import 'services/shake_service.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -15,6 +16,15 @@ Future<void> main() async {
     // screen on top, which sends it again.
     resumeSos: loggedIn && AppState.I.resumedPendingSos,
   ));
+  // Listen for a shake while the app is open. openShakeCountdown() checks
+  // whether a shake is allowed right now (logged in, toggle ON, no SOS running).
+  ShakeService.I.start(
+    onShake: openShakeCountdown,
+    onAvailability: (ok) {
+      AppState.I.sensorAvailable = ok;
+      AppState.I.changed();
+    },
+  );
 }
 
 class SafetyApp extends StatelessWidget {
@@ -27,6 +37,7 @@ class SafetyApp extends StatelessWidget {
         title: 'KAVACH',
         debugShowCheckedModeBanner: false,
         theme: buildTheme(),
+        navigatorKey: navigatorKey,
         initialRoute: initialRoute, // Login unless a saved session was restored
         onGenerateInitialRoutes: resumeSos
             ? (_) => <Route<dynamic>>[
