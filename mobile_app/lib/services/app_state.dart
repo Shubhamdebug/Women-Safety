@@ -54,8 +54,18 @@ class AppState extends ChangeNotifier {
   }
 
   /// True when a shake is allowed to open the countdown right now.
-  bool get shakeArmed =>
-      user != null && setupDone && shakeProtection && !countdownOpen && !sosInProgress;
+  DateTime? lastCountdownClosedAt; // set by S04 when it closes
+  bool get shakeArmed {
+    final closed = lastCountdownClosedAt;
+    final coolingDown =
+        closed != null && DateTime.now().difference(closed) < AppConfig.shakeCooldown;
+    return user != null &&
+        setupDone &&
+        shakeProtection &&
+        !countdownOpen &&
+        !sosInProgress &&
+        !coolingDown;
+  }
 
   /// True when the app restarted with an unsent SOS and resumed it.
   /// main.dart then opens the SOS status screen, which retries sending.

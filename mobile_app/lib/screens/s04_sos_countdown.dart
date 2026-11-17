@@ -51,6 +51,7 @@ class _S04State extends State<S04SosCountdown> {
   void dispose() {
     _timer?.cancel();
     AppState.I.countdownOpen = false;
+    AppState.I.lastCountdownClosedAt = DateTime.now();
     super.dispose();
   }
 

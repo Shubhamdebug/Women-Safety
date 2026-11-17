@@ -17,6 +17,10 @@ class AppConfig {
   static const shakePeaksNeeded = 3;
   static const shakeWindow = Duration(milliseconds: 1500);
 
+  /// After a countdown closes (cancelled or sent), shaking is ignored for this
+  /// long, so the same movement cannot immediately reopen it.
+  static const shakeCooldown = Duration(seconds: 5);
+
   /// Two peaks closer than this count as one (a single jolt rings for a few samples).
   static const shakePeakGap = Duration(milliseconds: 120);
 
