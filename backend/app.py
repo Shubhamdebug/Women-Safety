@@ -30,6 +30,11 @@ def create_app(config_overrides=None):
         import models  # noqa: F401  (makes sure all tables are known)
 
         db.create_all()
+        # Old databases: let an SOS be saved without a location (see migrations.py).
+        from migrations import allow_missing_incident_location
+
+        if allow_missing_incident_location(db.engine):
+            print("[migration] incidents.latitude/longitude are now optional")
 
     @app.get("/api/health")
     def health():

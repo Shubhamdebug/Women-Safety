@@ -37,6 +37,20 @@ def valid_coords(lat, lon):
     return lat, lon
 
 
+def optional_coords(lat, lon):
+    """
+    For an SOS the location may be missing (the phone had no GPS fix).
+    Returns (ok, coords):
+      neither given        -> (True, None)   saved without a location
+      both valid           -> (True, (lat, lon))
+      one given, or bad    -> (False, None)  a half or wrong location is an error
+    """
+    if lat is None and lon is None:
+        return True, None
+    coords = valid_coords(lat, lon)
+    return (coords is not None), coords
+
+
 def is_uuid(value):
     try:
         uuid.UUID(str(value))

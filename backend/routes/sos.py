@@ -7,7 +7,7 @@ from alerts import dispatch_sos
 from auth_utils import token_required
 from extensions import db
 from models import Incident, LocationPing
-from utils import error, is_uuid, parse_ts, utcnow, valid_coords
+from utils import error, is_uuid, optional_coords, parse_ts, utcnow, valid_coords
 
 bp = Blueprint("sos", __name__)
 
@@ -37,9 +37,11 @@ def create_sos():
     user = g.current_user
     data = request.get_json(silent=True) or {}
 
-    coords = valid_coords(data.get("latitude"), data.get("longitude"))
-    if coords is None:
-        return error("Valid latitude and longitude are required.")
+    # The location is optional for an SOS: help must still be sent when the phone
+    # has no GPS fix. If it is given, it must be valid (both values, in range).
+    ok, coords = optional_coords(data.get("latitude"), data.get("longitude"))
+    if not ok:
+        return error("Send both a valid latitude and longitude, or neither.")
 
     incident_id = data.get("id") or str(uuid.uuid4())
     if not is_uuid(incident_id):
@@ -66,8 +68,8 @@ def create_sos():
         user_id=user.id,
         kind="sos",
         trigger=trigger,
-        latitude=coords[0],
-        longitude=coords[1],
+        latitude=coords[0] if coords else None,
+        longitude=coords[1] if coords else None,
         battery_level=battery,
         status="active",
         created_at=parse_ts(data.get("timestamp")) or utcnow(),
@@ -118,6 +120,10 @@ def add_location(incident_id):
     coords = valid_coords(data.get("latitude"), data.get("longitude"))
     if coords is None:
         return error("Valid latitude and longitude are required.")
+
+    if incident.latitude is None:
+        # The SOS was saved without a location: the first tracking point becomes it.
+        incident.latitude, incident.longitude = coords
 
     ping = LocationPing(
         incident_id=incident.id,
