@@ -21,6 +21,8 @@ class EmergencyEvent {
   String syncStatus;
   String contactsStatus;
   String alertDetail; // e.g. "2 of 2 contacts alerted"
+  /// null = still saving, true = written to encrypted storage, false = saving failed.
+  bool? savedOnDevice;
   EmergencyEvent({
     required this.id,
     required this.time,
@@ -29,7 +31,25 @@ class EmergencyEvent {
     this.syncStatus = 'pending',
     this.contactsStatus = 'not_notified',
     this.alertDetail = '',
+    this.savedOnDevice,
   });
+
+  /// Only what is needed to resend an unsent SOS after a restart.
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'time': time.toUtc().toIso8601String(),
+        'trigger': trigger,
+      };
+
+  /// Returns null if the saved data is damaged (then it is simply dropped).
+  static EmergencyEvent? fromJson(Map<String, dynamic> j) {
+    final id = j['id'];
+    final trigger = j['trigger'];
+    final t = DateTime.tryParse('${j['time']}');
+    if (id is! String || trigger is! String || t == null) return null;
+    return EmergencyEvent(
+        id: id, time: t.toLocal(), trigger: trigger, savedOnDevice: true);
+  }
 }
 
 /// Deliberately has NO user fields: reports stay anonymous.

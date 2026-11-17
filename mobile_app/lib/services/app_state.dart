@@ -6,8 +6,8 @@ import '../models/models.dart';
 import 'api_client.dart';
 import 'session_store.dart';
 
-/// MOCK data layer (in memory, resets when the app restarts).
-/// Later: swap the methods for Flask API calls + local SQLite.
+/// Data layer: talks to the Flask backend. An SOS that has not reached the
+/// server yet is also saved in encrypted storage and resent after a restart.
 /// Screens only call this class, so they will not need rewriting.
 class AppState extends ChangeNotifier {
   AppState._();
@@ -36,6 +36,40 @@ class AppState extends ChangeNotifier {
   bool liveSharing = false;
   DateTime? liveSince;
   String? lastSendError; // why the last SOS send failed, shown on S05
+
+  /// An unsent SOS older than this is NOT resent after a restart (a late alert
+  /// to contacts about a long-finished situation would only cause panic).
+  static const pendingSosMaxAge = Duration(hours: 1);
+
+  // shake trigger
+  bool countdownOpen = false; // S04 is on screen (or about to be)
+  bool sensorAvailable = true; // false when this device has no usable accelerometer
+
+  /// An SOS started in the last 30 minutes. The same window createEvent() uses
+  /// to reuse an event, so an old forgotten "active" event cannot block shaking.
+  static const recentEventWindow = Duration(minutes: 30);
+  bool get sosInProgress {
+    final e = activeEvent;
+    return e != null && DateTime.now().difference(e.time) < recentEventWindow;
+  }
+
+  /// True when a shake is allowed to open the countdown right now.
+  DateTime? lastCountdownClosedAt; // set by S04 when it closes
+  bool get shakeArmed {
+    final closed = lastCountdownClosedAt;
+    final coolingDown =
+        closed != null && DateTime.now().difference(closed) < AppConfig.shakeCooldown;
+    return user != null &&
+        setupDone &&
+        shakeProtection &&
+        !countdownOpen &&
+        !sosInProgress &&
+        !coolingDown;
+  }
+
+  /// True when the app restarted with an unsent SOS and resumed it.
+  /// main.dart then opens the SOS status screen, which retries sending.
+  bool resumedPendingSos = false;
 
   // data
   final List<Contact> contacts = [];
@@ -93,6 +127,7 @@ class AppState extends ChangeNotifier {
     if (r.status == 401) {
       ApiClient.I.token = null;
       await SessionStore.clear();
+      await SessionStore.clearPendingSos();
       return false;
     }
     user = Account(saved.name, saved.phone, '', '');
@@ -102,15 +137,34 @@ class AppState extends ChangeNotifier {
           (fresh['email'] ?? '') as String, '');
       await SessionStore.save(saved.token, user!.name, user!.phone);
     }
+    await _resumePendingSos(saved.phone);
     unawaited(loadContacts());
     unawaited(loadHistory());
     return true;
   }
 
+  /// If the app was closed while an SOS had not reached the server, bring it
+  /// back so the SOS status screen can send it again (same UUID, so the
+  /// server never creates a duplicate).
+  Future<void> _resumePendingSos(String phone) async {
+    final j = await SessionStore.loadPendingSos();
+    if (j == null) return;
+    final e = EmergencyEvent.fromJson(j);
+    final tooOld = e == null || DateTime.now().difference(e.time) >= pendingSosMaxAge;
+    if (e == null || tooOld || j['phone'] != phone) {
+      await SessionStore.clearPendingSos();
+      return;
+    }
+    events.insert(0, e);
+    resumedPendingSos = true;
+  }
+
   void logout() {
     user = null;
     ApiClient.I.token = null;
+    resumedPendingSos = false;
     unawaited(SessionStore.clear());
+    unawaited(SessionStore.clearPendingSos());
     contacts.clear();
     events.clear();
     liveSharing = false;
@@ -198,13 +252,26 @@ class AppState extends ChangeNotifier {
   EmergencyEvent createEvent(String trigger) {
     final existing = activeEvent;
     if (existing != null &&
-        DateTime.now().difference(existing.time) < const Duration(minutes: 30)) {
+        DateTime.now().difference(existing.time) < recentEventWindow) {
       return existing;
     }
     final e = EmergencyEvent(id: _id(), time: DateTime.now(), trigger: trigger);
     events.insert(0, e);
+    unawaited(_savePending(e));
     _go();
     return e;
+  }
+
+  /// Writes the unsent SOS to encrypted storage. S05 only claims "kept even if
+  /// the app restarts" when this really succeeded (e.savedOnDevice == true).
+  Future<void> _savePending(EmergencyEvent e) async {
+    e.savedOnDevice = await SessionStore.savePendingSos(e.toJson(), user?.phone ?? '');
+    // The send or a cancel may have finished while we were writing: do not
+    // leave a stale copy behind.
+    if (e.syncStatus == 'received' || e.status != 'active') {
+      await SessionStore.clearPendingSos(e.id);
+    }
+    _go();
   }
 
   /// POST /api/sos. e.id is a UUID, so retrying after a network drop is safe
@@ -232,6 +299,7 @@ class AppState extends ChangeNotifier {
       return false;
     }
     e.syncStatus = 'received';
+    unawaited(SessionStore.clearPendingSos(e.id)); // the server has it now
     if (r.data['duplicate'] != true) {
       final alerts = ((r.data['alerts'] as List?) ?? [])
           .where((a) => a['channel'] == 'sms')
@@ -266,6 +334,7 @@ class AppState extends ChangeNotifier {
   void cancelEvent(EmergencyEvent e) {
     e.status = 'cancelled';
     liveSharing = false;
+    unawaited(SessionStore.clearPendingSos(e.id));
     _closeOnServer(e, 'cancelled');
     _go();
   }

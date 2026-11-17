@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 /// What we keep on the device so the user stays logged in after the app restarts.
@@ -36,6 +37,41 @@ class SessionStore {
       await _s.delete(key: 'token');
       await _s.delete(key: 'name');
       await _s.delete(key: 'phone');
+    } catch (_) {}
+  }
+
+  // ---------- unsent SOS (survives an app restart) ----------
+  static const _pendingKey = 'pending_sos';
+
+  /// Returns true only if the SOS really was written to encrypted storage.
+  static Future<bool> savePendingSos(Map<String, dynamic> sos, String phone) async {
+    try {
+      await _s.write(key: _pendingKey, value: jsonEncode({...sos, 'phone': phone}));
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  static Future<Map<String, dynamic>?> loadPendingSos() async {
+    try {
+      final raw = await _s.read(key: _pendingKey);
+      if (raw == null) return null;
+      final j = jsonDecode(raw);
+      return j is Map<String, dynamic> ? j : null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// With [onlyId], deletes the saved SOS only if it is that one.
+  static Future<void> clearPendingSos([String? onlyId]) async {
+    try {
+      if (onlyId != null) {
+        final cur = await loadPendingSos();
+        if (cur != null && cur['id'] != onlyId) return;
+      }
+      await _s.delete(key: _pendingKey);
     } catch (_) {}
   }
 

@@ -57,6 +57,22 @@ class _S05State extends State<S05SosStatus> {
           );
         }
         final synced = e.syncStatus == 'received';
+        final saved = e.savedOnDevice;
+        final String savedDetail;
+        final StepStatus savedState;
+        if (synced) {
+          savedDetail = 'The server has it now';
+          savedState = StepStatus.done;
+        } else if (saved == true) {
+          savedDetail = 'Kept even if the app restarts';
+          savedState = StepStatus.done;
+        } else if (saved == false) {
+          savedDetail = 'Could not save on this device';
+          savedState = StepStatus.warn;
+        } else {
+          savedDetail = 'Saving...';
+          savedState = StepStatus.pending;
+        }
         return Scaffold(
           appBar: AppBar(title: const Text('SOS status'), automaticallyImplyLeading: false),
           body: SafeArea(
@@ -79,10 +95,10 @@ class _S05State extends State<S05SosStatus> {
                       label: 'Event created',
                       detail: '#${e.id.substring(e.id.length - 6)}',
                       state: StepStatus.done),
-                  const StepRow(
+                  StepRow(
                       label: 'Saved on this device',
-                      detail: 'Kept even if the app restarts',
-                      state: StepStatus.done),
+                      detail: savedDetail,
+                      state: savedState),
                   StepRow(
                     label: 'Sent to server',
                     detail: synced

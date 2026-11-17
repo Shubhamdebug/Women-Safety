@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'config/routes.dart';
 import 'config/theme.dart';
 import 'services/app_state.dart';
+import 'services/shake_service.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -11,19 +12,43 @@ Future<void> main() async {
     initialRoute: loggedIn
         ? (AppState.I.setupDone ? Routes.home : Routes.permissions)
         : Routes.login,
+    // An SOS that never reached the server: open Home with the SOS status
+    // screen on top, which sends it again.
+    resumeSos: loggedIn && AppState.I.resumedPendingSos,
   ));
+  // Listen for a shake while the app is open. openShakeCountdown() checks
+  // whether a shake is allowed right now (logged in, toggle ON, no SOS running).
+  ShakeService.I.start(
+    onShake: openShakeCountdown,
+    onAvailability: (ok) {
+      AppState.I.sensorAvailable = ok;
+      AppState.I.changed();
+    },
+  );
 }
 
 class SafetyApp extends StatelessWidget {
-  const SafetyApp({super.key, this.initialRoute = Routes.login});
+  const SafetyApp({super.key, this.initialRoute = Routes.login, this.resumeSos = false});
   final String initialRoute;
+  final bool resumeSos;
 
   @override
   Widget build(BuildContext context) => MaterialApp(
         title: 'KAVACH',
         debugShowCheckedModeBanner: false,
         theme: buildTheme(),
+        navigatorKey: navigatorKey,
         initialRoute: initialRoute, // Login unless a saved session was restored
+        onGenerateInitialRoutes: resumeSos
+            ? (_) => <Route<dynamic>>[
+                  MaterialPageRoute(
+                      settings: const RouteSettings(name: Routes.home),
+                      builder: appRoutes[Routes.home]!),
+                  MaterialPageRoute(
+                      settings: const RouteSettings(name: Routes.sosStatus),
+                      builder: appRoutes[Routes.sosStatus]!),
+                ]
+            : null,
         routes: appRoutes,
       );
 }
