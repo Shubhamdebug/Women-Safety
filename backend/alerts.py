@@ -14,7 +14,10 @@ from models import AlertLog
 
 
 def build_message(user, incident):
-    link = f"https://maps.google.com/?q={incident.latitude},{incident.longitude}"
+    if incident.latitude is None or incident.longitude is None:
+        link = "not available (the phone could not get a GPS fix)"
+    else:
+        link = f"https://maps.google.com/?q={incident.latitude},{incident.longitude}"
     battery = f" Battery: {incident.battery_level}%." if incident.battery_level is not None else ""
     return f"SafeHer ALERT: {user.name} may need help. Location: {link}.{battery}"
 

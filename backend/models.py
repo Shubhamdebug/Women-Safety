@@ -60,8 +60,9 @@ class Incident(db.Model):
     trigger = db.Column(db.String(20))  # button | shake | low_battery | timer | voice
     category = db.Column(db.String(30))  # used by reports
     description = db.Column(db.String(500))
-    latitude = db.Column(db.Float, nullable=False)
-    longitude = db.Column(db.Float, nullable=False)
+    # NULL = the phone could not get a GPS fix. Reports always have a location.
+    latitude = db.Column(db.Float, nullable=True)
+    longitude = db.Column(db.Float, nullable=True)
     battery_level = db.Column(db.Integer)
     status = db.Column(db.String(15), nullable=False, default="active")
     photo_path = db.Column(db.String(255))

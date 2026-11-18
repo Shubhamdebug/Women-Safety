@@ -1,3 +1,5 @@
+import '../features/safety_device/domain/models.dart' as device;
+
 class Account {
   final String name, phone, email, password; // password: mock only, backend must hash
   Account(this.name, this.phone, this.email, this.password);
@@ -23,6 +25,8 @@ class EmergencyEvent {
   String alertDetail; // e.g. "2 of 2 contacts alerted"
   /// null = still saving, true = written to encrypted storage, false = saving failed.
   bool? savedOnDevice;
+  device.LocationSnapshot? location;
+  device.LocationFailure? locationFailure;
   EmergencyEvent({
     required this.id,
     required this.time,
@@ -32,14 +36,18 @@ class EmergencyEvent {
     this.contactsStatus = 'not_notified',
     this.alertDetail = '',
     this.savedOnDevice,
+    this.location,
+    this.locationFailure,
   });
 
   /// Only what is needed to resend an unsent SOS after a restart.
   Map<String, dynamic> toJson() => {
-        'id': id,
-        'time': time.toUtc().toIso8601String(),
-        'trigger': trigger,
-      };
+    'id': id,
+    'time': time.toUtc().toIso8601String(),
+    'trigger': trigger,
+    'location': location?.toJson(),
+    'locationFailure': locationFailure?.name,
+  };
 
   /// Returns null if the saved data is damaged (then it is simply dropped).
   static EmergencyEvent? fromJson(Map<String, dynamic> j) {
@@ -47,8 +55,32 @@ class EmergencyEvent {
     final trigger = j['trigger'];
     final t = DateTime.tryParse('${j['time']}');
     if (id is! String || trigger is! String || t == null) return null;
+    device.LocationSnapshot? location;
+    device.LocationFailure? failure;
+    try {
+      if (j['location'] is Map<String, dynamic>) {
+        location = device.LocationSnapshot.fromJson(
+          j['location'] as Map<String, dynamic>,
+        );
+      }
+      if (j['locationFailure'] is String) {
+        failure = device.LocationFailure.values.byName(
+          j['locationFailure'] as String,
+        );
+      }
+    } catch (_) {
+      // Retain the emergency identity even if optional location metadata is damaged.
+      location = null;
+      failure = device.LocationFailure.unavailable;
+    }
     return EmergencyEvent(
-        id: id, time: t.toLocal(), trigger: trigger, savedOnDevice: true);
+      id: id,
+      time: t.toLocal(),
+      trigger: trigger,
+      savedOnDevice: true,
+      location: location,
+      locationFailure: failure,
+    );
   }
 }
 

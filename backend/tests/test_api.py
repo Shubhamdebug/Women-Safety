@@ -209,3 +209,59 @@ def test_admin_feed_hotspots_and_stats(client):
 def test_health_and_404(client):
     assert client.get("/api/health").get_json() == {"status": "ok"}
     assert client.get("/api/nope").status_code == 404
+
+
+# ---------- SOS without a location (the phone had no GPS fix) ----------
+
+def test_sos_without_location_is_saved_and_alerted(client, capsys):
+    h = register(client)
+    client.post("/api/guardians", json={"name": "Mum", "phone": "9123456789"}, headers=h)
+    sos_id = str(uuid.uuid4())
+    r = client.post("/api/sos", json={"id": sos_id, "trigger": "button"}, headers=h)
+    assert r.status_code == 201
+    inc = r.get_json()["incident"]
+    assert inc["latitude"] is None and inc["longitude"] is None
+    assert r.get_json()["alerts"][0]["status"] == "simulated"
+    assert "not available" in capsys.readouterr().out  # the SMS says the location is unknown
+    # retry with the same id still returns the first one, no second alert
+    again = client.post("/api/sos", json={"id": sos_id}, headers=h)
+    assert again.status_code == 200 and again.get_json()["duplicate"] is True
+
+
+def test_sos_half_or_bad_location_is_still_rejected(client):
+    h = register(client)
+    assert client.post("/api/sos", json={"latitude": 12.0}, headers=h).status_code == 400
+    assert client.post("/api/sos", json={"longitude": 12.0}, headers=h).status_code == 400
+    assert client.post("/api/sos", json={"latitude": "x", "longitude": 1}, headers=h).status_code == 400
+    assert client.post("/api/sos", json={"latitude": 999, "longitude": 0}, headers=h).status_code == 400
+
+
+def test_first_tracking_point_gives_a_location_to_a_gps_less_sos(client):
+    h = register(client)
+    sos_id = client.post("/api/sos", json={"trigger": "shake"}, headers=h).get_json()["incident"]["id"]
+    # a ping without coordinates is still an error
+    assert client.post(f"/api/sos/{sos_id}/location", json={}, headers=h).status_code == 400
+    assert client.post(f"/api/sos/{sos_id}/location", json={"latitude": 16.71, "longitude": 74.21}, headers=h).status_code == 201
+    inc = client.get(f"/api/sos/{sos_id}", headers=h).get_json()["incident"]
+    assert inc["latitude"] == 16.71 and inc["longitude"] == 74.21
+    # later pings do not move the original location
+    client.post(f"/api/sos/{sos_id}/location", json={"latitude": 17.0, "longitude": 75.0}, headers=h)
+    inc = client.get(f"/api/sos/{sos_id}", headers=h).get_json()["incident"]
+    assert inc["latitude"] == 16.71
+
+
+def test_reports_still_require_a_location(client):
+    assert client.post("/api/reports", json={"category": "other"}).status_code == 400
+
+
+def test_hotspots_skip_sos_without_location(client):
+    h = register(client)
+    client.post("/api/sos", json={"trigger": "button"}, headers=h)
+    client.post("/api/sos", json={"latitude": 16.7, "longitude": 74.24}, headers=h)
+    r = client.get("/api/admin/hotspots", headers=admin_headers(client))
+    assert r.status_code == 200
+    body = r.get_json()
+    assert body["total_incidents"] == 2 and body["without_location"] == 1
+    assert len(body["hotspots"]) == 1 and body["hotspots"][0]["incident_count"] == 1
+    feed = client.get("/api/admin/incidents", headers=admin_headers(client))
+    assert feed.status_code == 200 and len(feed.get_json()["incidents"]) == 2

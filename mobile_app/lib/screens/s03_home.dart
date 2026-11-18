@@ -137,7 +137,8 @@ class S03Home extends StatelessWidget {
                       minimumSize: const Size(96, 46),
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
                     ),
-                    onPressed: () {
+                    onPressed: !s.liveSharing && s.activeEvent?.syncStatus != 'received'
+                        ? null : () {
                       if (s.liveSharing) {
                         s.stopLive();
                       } else {

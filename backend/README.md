@@ -161,8 +161,10 @@ Base URL: `http://<laptop-ip>:5000` · All bodies are JSON · Protected routes n
 ### SOS 🔒 (for Shubham and Vignesh)
 | Method | Path | Body / notes |
 |---|---|---|
-| POST | `/api/sos` | `id` (UUID made on the phone), `latitude`, `longitude`, `battery_level` (0-100), `trigger` (`button`/`shake`/`low_battery`/`timer`/`voice`/`other`), `timestamp` (ISO, optional). Alerts guardians. Same `id` sent again returns `duplicate: true`, no second alert. |
+| POST | `/api/sos` | `id` (UUID made on the phone), `latitude` + `longitude` (**optional**: leave both out if the phone has no GPS fix; sending only one is an error), `battery_level` (0-100), `trigger` (`button`/`shake`/`low_battery`/`timer`/`voice`/`other`), `timestamp` (ISO, optional). Alerts guardians. Same `id` sent again returns `duplicate: true`, no second alert. |
 | POST | `/api/sos/<id>/location` | `latitude, longitude, timestamp` — send every few seconds while active |
+
+> An SOS saved without a location stores `latitude`/`longitude` as `null`, the SMS says the location is not available, and the first `/location` point after it becomes the SOS location. `/api/admin/hotspots` ignores such incidents (counted in `without_location`). The dashboard must skip `null` coordinates when drawing markers.
 | POST | `/api/sos/<id>/resolve` | `status`: `resolved` / `cancelled` / `false_alarm` |
 | POST | `/api/sos/<id>/photo` | multipart form, field name `photo` (jpg/png, max 5 MB) |
 | GET | `/api/sos/<id>` | details, location points, alert log |

@@ -1,5 +1,7 @@
 enum LocationSource { current, cached }
 
+enum LocationPrecision { precise, approximate, unknown }
+
 enum LocationFailure {
   denied,
   permanentlyDenied,
@@ -29,6 +31,7 @@ class LocationSnapshot {
     required this.accuracyMeters,
     required DateTime capturedAt,
     required this.source,
+    this.precision = LocationPrecision.unknown,
   }) : capturedAtUtc = capturedAt.toUtc() {
     if (!latitude.isFinite ||
         latitude < -90 ||
@@ -46,6 +49,7 @@ class LocationSnapshot {
   final double accuracyMeters;
   final DateTime capturedAtUtc;
   final LocationSource source;
+  final LocationPrecision precision;
 
   bool isFreshAt(DateTime now, Duration maximumAge) {
     final age = now.toUtc().difference(capturedAtUtc);
@@ -58,6 +62,7 @@ class LocationSnapshot {
     'accuracyMeters': accuracyMeters,
     'capturedAtUtc': capturedAtUtc.toIso8601String(),
     'source': source.name,
+    'precision': precision.name,
   };
 
   factory LocationSnapshot.fromJson(Map<String, dynamic> json) =>
@@ -67,6 +72,9 @@ class LocationSnapshot {
         accuracyMeters: (json['accuracyMeters'] as num).toDouble(),
         capturedAt: DateTime.parse(json['capturedAtUtc'] as String),
         source: LocationSource.values.byName(json['source'] as String),
+        precision: LocationPrecision.values.byName(
+          (json['precision'] as String?) ?? 'unknown',
+        ),
       );
 }
 

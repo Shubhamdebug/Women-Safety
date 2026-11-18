@@ -65,9 +65,10 @@ def hotspots():
 
     cutoff = utcnow() - timedelta(days=days)
     items = Incident.query.filter(Incident.created_at >= cutoff).all()
+    located = [i for i in items if i.latitude is not None and i.longitude is not None]
 
     cells = defaultdict(lambda: {"count": 0, "lat": 0.0, "lon": 0.0, "hours": Counter()})
-    for inc in items:
+    for inc in located:  # an SOS without a location cannot be placed on the map
         key = (round(inc.latitude / cell), round(inc.longitude / cell))
         c = cells[key]
         c["count"] += 1
@@ -90,7 +91,13 @@ def hotspots():
             }
         )
     result.sort(key=lambda r: r["incident_count"], reverse=True)
-    return jsonify({"hotspots": result, "total_incidents": len(items)})
+    return jsonify(
+        {
+            "hotspots": result,
+            "total_incidents": len(items),
+            "without_location": len(items) - len(located),
+        }
+    )
 
 
 @bp.get("/stats")
