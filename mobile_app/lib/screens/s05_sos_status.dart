@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:geolocator/geolocator.dart';
 import '../config/routes.dart';
 import '../config/theme.dart';
 import '../services/app_state.dart';
@@ -32,8 +33,9 @@ class _S05State extends State<S05SosStatus> {
     setState(() => _sending = false);
     if (ok) {
       await Future.delayed(const Duration(milliseconds: 1500));
-      if (!mounted || s.activeEvent == null) return;
-      s.startLive();
+      if (!mounted || s.activeEvent != e) return;
+      await s.startLive();
+      if (!mounted || s.activeEvent != e) return;
       Navigator.pushReplacementNamed(context, Routes.liveSharing);
     }
   }
@@ -100,6 +102,10 @@ class _S05State extends State<S05SosStatus> {
                       detail: savedDetail,
                       state: savedState),
                   StepRow(
+                      label: 'Location',
+                      detail: AppState.I.locationDetail,
+                      state: e.location != null ? StepStatus.done : StepStatus.warn),
+                  StepRow(
                     label: 'Sent to server',
                     detail: synced
                         ? 'Received by server'
@@ -119,6 +125,10 @@ class _S05State extends State<S05SosStatus> {
                 ]),
               ),
               if (!synced && !_sending) ...[
+                if (e.location == null)
+                  TextButton(
+                      onPressed: () => Geolocator.openAppSettings(),
+                      child: const Text('Open location permission settings')),
                 FilledButton(onPressed: _send, child: const Text('Retry sending')),
                 const SizedBox(height: 12),
               ],

@@ -1,7 +1,15 @@
 import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:uuid/uuid.dart';
+
 import '../config/app_config.dart';
+import '../features/safety_device/application/sos_tracking_session.dart';
+import '../features/safety_device/data/android_foreground_tracking_controller.dart';
+import '../features/safety_device/data/android_location_repository.dart';
+import '../features/safety_device/data/sos_payload_adapter.dart';
+import '../features/safety_device/domain/models.dart' as device;
+import '../features/safety_device/domain/ports.dart';
 import '../models/models.dart';
 import 'api_client.dart';
 import 'session_store.dart';
@@ -10,8 +18,80 @@ import 'session_store.dart';
 /// server yet is also saved in encrypted storage and resent after a restart.
 /// Screens only call this class, so they will not need rewriting.
 class AppState extends ChangeNotifier {
-  AppState._();
+  AppState._({
+    LocationRepository? locations,
+    SosPost? post,
+    SosTrackingSession? tracking,
+  }) : _locations = locations ?? AndroidLocationRepository(),
+       _postSos = post ?? ApiClient.I.post,
+       tracking =
+           tracking ??
+           SosTrackingSession(
+             controller: AndroidForegroundTrackingController(),
+             post: post ?? ApiClient.I.post,
+           ) {
+    this.tracking.addListener(_trackingChanged);
+  }
   static final AppState I = AppState._();
+
+  @visibleForTesting
+  factory AppState.forDeviceTests({
+    required LocationRepository locations,
+    required SosPost post,
+    required SosTrackingSession tracking,
+  }) => AppState._(locations: locations, post: post, tracking: tracking);
+
+  final LocationRepository _locations;
+  final SosPost _postSos;
+  final SosTrackingSession tracking;
+  final Map<String, Future<bool>> _sends = {};
+  Future<void> _pendingWrite = Future.value();
+
+  void _trackingChanged() {
+    liveSharing = tracking.state == TrackingState.active;
+    _go();
+  }
+
+  String get locationDetail {
+    final event = activeEvent;
+    final location = event?.location;
+    if (location != null) {
+      final precision =
+          location.precision == device.LocationPrecision.approximate
+          ? 'Approximate'
+          : 'Phone';
+      final cached = location.source == device.LocationSource.cached
+          ? ' (recent cached fix)'
+          : '';
+      return '$precision location$cached, accuracy about ${location.accuracyMeters.round()} m';
+    }
+    return switch (event?.locationFailure) {
+      device.LocationFailure.denied =>
+        'Location permission denied. Sending SOS without coordinates.',
+      device.LocationFailure.permanentlyDenied =>
+        'Location blocked. Allow it in phone settings.',
+      device.LocationFailure.disabled =>
+        'Phone location is off. Sending SOS without coordinates.',
+      device.LocationFailure.timeout =>
+        'GPS timed out. Sending SOS without coordinates.',
+      device.LocationFailure.unavailable =>
+        'Location unavailable. Sending SOS without coordinates.',
+      null => 'Waiting for phone location...',
+    };
+  }
+
+  String get trackingDetail =>
+      tracking.lastError ??
+      switch (tracking.state) {
+        TrackingState.starting => 'Waiting for a GPS fix...',
+        TrackingState.active =>
+          tracking.lastPingAt == null
+              ? 'Tracking active; waiting for server acknowledgment'
+              : 'Updating about every 30 seconds. Last acknowledged at ${tracking.lastPingAt!.toLocal().toIso8601String().substring(11, 19)}',
+        TrackingState.failed =>
+          'Tracking unavailable. Check phone settings and retry.',
+        TrackingState.stopped => 'Tracking stopped',
+      };
 
   // account (the real accounts live on the backend)
   Account? user;
@@ -43,7 +123,8 @@ class AppState extends ChangeNotifier {
 
   // shake trigger
   bool countdownOpen = false; // S04 is on screen (or about to be)
-  bool sensorAvailable = true; // false when this device has no usable accelerometer
+  bool sensorAvailable =
+      true; // false when this device has no usable accelerometer
 
   /// An SOS started in the last 30 minutes. The same window createEvent() uses
   /// to reuse an event, so an old forgotten "active" event cannot block shaking.
@@ -58,7 +139,8 @@ class AppState extends ChangeNotifier {
   bool get shakeArmed {
     final closed = lastCountdownClosedAt;
     final coolingDown =
-        closed != null && DateTime.now().difference(closed) < AppConfig.shakeCooldown;
+        closed != null &&
+        DateTime.now().difference(closed) < AppConfig.shakeCooldown;
     return user != null &&
         setupDone &&
         shakeProtection &&
@@ -77,6 +159,7 @@ class AppState extends ChangeNotifier {
   final List<AnonymousReport> reports = [];
 
   static const _uuid = Uuid();
+
   /// Real UUID v4. The backend requires this for SOS ids (idempotency key).
   String _id() => _uuid.v4();
   void _go() => notifyListeners();
@@ -160,6 +243,7 @@ class AppState extends ChangeNotifier {
   }
 
   void logout() {
+    unawaited(tracking.stop());
     user = null;
     ApiClient.I.token = null;
     resumedPendingSos = false;
@@ -256,6 +340,8 @@ class AppState extends ChangeNotifier {
       return existing;
     }
     final e = EmergencyEvent(id: _id(), time: DateTime.now(), trigger: trigger);
+    unawaited(tracking.stop());
+    liveSince = null;
     events.insert(0, e);
     unawaited(_savePending(e));
     _go();
@@ -264,37 +350,71 @@ class AppState extends ChangeNotifier {
 
   /// Writes the unsent SOS to encrypted storage. S05 only claims "kept even if
   /// the app restarts" when this really succeeded (e.savedOnDevice == true).
-  Future<void> _savePending(EmergencyEvent e) async {
-    e.savedOnDevice = await SessionStore.savePendingSos(e.toJson(), user?.phone ?? '');
-    // The send or a cancel may have finished while we were writing: do not
-    // leave a stale copy behind.
-    if (e.syncStatus == 'received' || e.status != 'active') {
-      await SessionStore.clearPendingSos(e.id);
-    }
-    _go();
+  Future<void> _savePending(EmergencyEvent e) {
+    final phone = user?.phone ?? '';
+    // Serialize the initial and location-enriched writes to the existing store.
+    return _pendingWrite = _pendingWrite.then((_) async {
+      e.savedOnDevice = await SessionStore.savePendingSos(e.toJson(), phone);
+      // The send or a cancel may have finished while we were writing: do not
+      // leave a stale copy behind.
+      if (e.syncStatus == 'received' ||
+          e.status != 'active' ||
+          user?.phone != phone) {
+        await SessionStore.clearPendingSos(e.id);
+      }
+      _go();
+    });
   }
 
   /// POST /api/sos. e.id is a UUID, so retrying after a network drop is safe
   /// (the backend returns the first record instead of creating a duplicate).
-  /// TODO: replace the fixed location with real GPS (M2's work). Until then
-  /// every SOS is reported from AppConfig.campusCenter.
-  Future<bool> sendEvent(EmergencyEvent e) async {
+  Future<bool> sendEvent(EmergencyEvent e) => _sends.putIfAbsent(
+    e.id,
+    () => _sendEvent(e).whenComplete(() {
+      _sends.remove(e.id);
+    }),
+  );
+
+  Future<bool> _sendEvent(EmergencyEvent e) async {
+    final owner = user;
     lastSendError = null;
+    if (e.status != 'active' || owner == null) return false;
+    // The initial pending record survives a process exit during permission/GPS work.
+    await _pendingWrite;
+    if (e.location == null) {
+      device.LocationResult result;
+      try {
+        result = await _locations.capture();
+      } catch (_) {
+        result = const device.LocationResult(
+          failure: device.LocationFailure.unavailable,
+        );
+      }
+      if (e.status != 'active' || user != owner) return false;
+      e.location = result.snapshot;
+      e.locationFailure = result.failure;
+      await _savePending(e);
+    }
+    if (e.status != 'active' || user != owner) return false;
     if (!online) {
       lastSendError = 'Offline switch is on (demo)';
       _go();
       return false;
     }
     if (e.status != 'active') return false;
-    final r = await ApiClient.I.post('/api/sos', {
-      'id': e.id,
-      'trigger': e.trigger,
-      'latitude': AppConfig.campusCenter.latitude,
-      'longitude': AppConfig.campusCenter.longitude,
-      'timestamp': e.time.toUtc().toIso8601String(),
-    });
+    final r = await _postSos('/api/sos', SosPayloadAdapter.create(e));
+    if (user != owner) return false;
     if (!r.ok) {
-      lastSendError = r.error;
+      lastSendError = e.location == null && r.status == 400
+          ? 'Server rejected an SOS without location. The SOS remains pending; enable GPS and retry.'
+          : r.error;
+      _go();
+      return false;
+    }
+    final incident = r.data['incident'];
+    if (incident is! Map || incident['id'] != e.id) {
+      lastSendError =
+          'The server did not acknowledge this SOS ID. It remains pending.';
       _go();
       return false;
     }
@@ -304,12 +424,14 @@ class AppState extends ChangeNotifier {
       final alerts = ((r.data['alerts'] as List?) ?? [])
           .where((a) => a['channel'] == 'sms')
           .toList();
-      final delivered =
-          alerts.where((a) => a['status'] == 'sent' || a['status'] == 'simulated').length;
+      final delivered = alerts
+          .where((a) => a['status'] == 'sent' || a['status'] == 'simulated')
+          .length;
       final simulated = alerts.any((a) => a['status'] == 'simulated');
       if (delivered > 0) {
         e.contactsStatus = 'handed_off';
-        e.alertDetail = '$delivered of ${alerts.length} contact(s) alerted'
+        e.alertDetail =
+            '$delivered of ${alerts.length} contact(s) alerted'
             '${simulated ? ' (demo: SMS is simulated)' : ''}';
       } else {
         e.contactsStatus = 'not_notified';
@@ -328,10 +450,11 @@ class AppState extends ChangeNotifier {
   /// state is still closed.
   void _closeOnServer(EmergencyEvent e, String status) {
     if (e.syncStatus != 'received') return; // the server never heard about it
-    unawaited(ApiClient.I.post('/api/sos/${e.id}/resolve', {'status': status}));
+    unawaited(_postSos('/api/sos/${e.id}/resolve', {'status': status}));
   }
 
   void cancelEvent(EmergencyEvent e) {
+    unawaited(tracking.stop());
     e.status = 'cancelled';
     liveSharing = false;
     unawaited(SessionStore.clearPendingSos(e.id));
@@ -354,41 +477,65 @@ class AppState extends ChangeNotifier {
         known.status = status;
         server.add(known);
       } else {
-        server.add(EmergencyEvent(
-          id: id,
-          time: DateTime.tryParse('${j['created_at']}')?.toLocal() ?? DateTime.now(),
-          trigger: (j['trigger'] ?? 'button') as String,
-          status: status,
-          syncStatus: 'received',
-          contactsStatus: 'unknown',
-        ));
+        server.add(
+          EmergencyEvent(
+            id: id,
+            time:
+                DateTime.tryParse('${j['created_at']}')?.toLocal() ??
+                DateTime.now(),
+            trigger: (j['trigger'] ?? 'button') as String,
+            status: status,
+            syncStatus: 'received',
+            contactsStatus: 'unknown',
+          ),
+        );
       }
     }
     final serverIds = server.map((e) => e.id).toSet();
-    final pendingLocal =
-        events.where((e) => e.syncStatus != 'received' && !serverIds.contains(e.id));
+    final pendingLocal = events.where(
+      (e) => e.syncStatus != 'received' && !serverIds.contains(e.id),
+    );
     final merged = [...pendingLocal, ...server];
     events
       ..clear()
       ..addAll(merged);
+    final trackedId = tracking.eventId;
+    if (trackedId != null &&
+        !events.any((event) => event.id == trackedId && event.status == 'active')) {
+      unawaited(tracking.stop());
+    }
     _go();
   }
 
-  void startLive() {
-    if (liveSharing) return;
-    liveSharing = true;
-    liveSince = DateTime.now();
+  Future<void> startLive() async {
+    final event = activeEvent;
+    if (event == null || event.syncStatus != 'received') {
+      lastSendError = 'Send an SOS successfully before starting live location.';
+      _go();
+      return;
+    }
+    liveSince ??= DateTime.now();
+    await tracking.start(event.id);
     _go();
   }
 
   void stopLive() {
+    unawaited(tracking.stop());
     liveSharing = false;
     final e = activeEvent;
     if (e != null) {
       e.status = 'resolved';
+      unawaited(SessionStore.clearPendingSos(e.id));
       _closeOnServer(e, 'resolved');
     }
     _go();
+  }
+
+  @override
+  void dispose() {
+    tracking.removeListener(_trackingChanged);
+    tracking.dispose();
+    super.dispose();
   }
 
   // ---------- S12 ----------

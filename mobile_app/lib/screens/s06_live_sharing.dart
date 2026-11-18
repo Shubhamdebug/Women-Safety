@@ -3,10 +3,11 @@ import 'package:flutter/material.dart';
 import '../config/routes.dart';
 import '../config/theme.dart';
 import '../services/app_state.dart';
+import '../features/safety_device/domain/ports.dart';
 import '../widgets/common.dart';
 
 /// S06 Live Sharing. Arrow: Stop sharing -> S03 Home.
-/// Location updates are demo only until GPS is connected (Vignesh).
+/// Shows foreground tracking and actual server acknowledgment.
 class S06LiveSharing extends StatefulWidget {
   const S06LiveSharing({super.key});
   @override
@@ -54,7 +55,9 @@ class _S06State extends State<S06LiveSharing> {
               child: const Icon(Icons.my_location, size: 64, color: AppColors.teal),
             ),
             const SizedBox(height: 24),
-            Text(s.liveSharing ? 'Sharing your location' : 'Sharing stopped',
+            Text(s.liveSharing ? 'Sharing your location'
+                : s.tracking.state == TrackingState.starting ? 'Starting location sharing'
+                : 'Sharing stopped',
                 style: const TextStyle(fontSize: 26, fontWeight: FontWeight.w800)),
             const SizedBox(height: 8),
             Text(fmtDuration(DateTime.now().difference(since)),
@@ -66,13 +69,16 @@ class _S06State extends State<S06LiveSharing> {
                     label: 'Emergency contacts',
                     detail: '${s.contacts.length} saved',
                     state: s.contacts.isNotEmpty ? StepStatus.done : StepStatus.warn),
-                const StepRow(
+                StepRow(
                     label: 'Location updates',
-                    detail: 'Demo only - GPS is not connected yet',
-                    state: StepStatus.warn),
+                    detail: s.trackingDetail,
+                    state: s.tracking.lastPingAt != null && s.tracking.lastError == null
+                        ? StepStatus.done : StepStatus.warn),
               ]),
             ),
             const Spacer(),
+            if (s.tracking.state == TrackingState.failed || s.tracking.state == TrackingState.stopped)
+              TextButton(onPressed: () => s.startLive(), child: const Text('Retry tracking')),
             FilledButton(onPressed: _stop, child: const Text('Stop sharing')),
           ]),
         ),
